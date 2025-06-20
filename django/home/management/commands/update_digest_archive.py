@@ -6,8 +6,8 @@ e.g. vol11_no3_Spring_2023.pdf
 """
 
 import logging
-import os
 import re
+import requests
 from datetime import datetime
 from django.core.management.base import BaseCommand
 
@@ -15,7 +15,7 @@ from home.models import ComsesDigest
 
 logger = logging.getLogger(__name__)
 
-DIGEST_STATIC_DIR = "home/static/digest/"
+ZENODO_COMMUNITY_API_URL = "https://zenodo.org/api/communities/comses-digest/records"
 
 
 class Command(BaseCommand):
@@ -23,28 +23,26 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         ComsesDigest.objects.all().delete()
-        err_msg = ""
 
-        for file_name in os.listdir(DIGEST_STATIC_DIR):
+        response = requests.get(ZENODO_COMMUNITY_API_URL)
+        if response.status_code != 200:
+            logger.error("Failed to fetch Zenodo records for CoMSES Digest.")
+            return
+
+        zenodo_records = response.json()["hits"]["hits"]
+        for record in zenodo_records:
+            file_name = record["files"][0]["key"]
             if file_name.endswith(".pdf"):
                 try:
-                    self.add_digest_archive(file_name)
+                    self.add_digest_archive(file_name, record["links"]["latest_html"])
                 except Exception as e:
-                    err_msg += f"{file_name}\n"
                     logger.error(e)
             else:
                 logger.info(f"Skipping non-pdf file: {file_name}")
 
-        if err_msg:
-            err_msg = (
-                "\n\nFailed to add the following digest archives, ensure the file name is correct:\n\n"
-                + err_msg
-            )
-            logger.error(err_msg)
-        else:
-            logger.info(f"\n\nSuccessfully indexed all pdfs in {DIGEST_STATIC_DIR}")
+        logger.info(f"\n\nSuccessfully indexed all pdfs from Zenodo community.")
 
-    def add_digest_archive(self, file_name):
+    def add_digest_archive(self, file_name, url):
         # FIXME: consider rolling all these regex searches into a single-pass regex monstrosity
         volume = int(re.search(r"vol(\d+)", file_name, re.IGNORECASE).group(1))
         issue_number = int(re.search(r"no(\d+)", file_name, re.IGNORECASE).group(1))
@@ -61,5 +59,6 @@ class Command(BaseCommand):
             issue_number=issue_number,
             publication_date=publication_date,
             season=season,
-            static_path="digest/" + file_name,
+            url=url,
         )
+        logger.info(digest)

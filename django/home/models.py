@@ -992,7 +992,7 @@ class ComsesDigest(index.Indexed, models.Model):
     volume = models.IntegerField()
     issue_number = models.IntegerField()
     publication_date = models.DateField()
-    static_path = models.CharField(max_length=128, unique=True)
+    url = models.CharField(max_length=256, unique=True, blank=True)
 
     @property
     def year_published(self):
